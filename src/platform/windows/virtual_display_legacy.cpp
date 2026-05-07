@@ -1,5 +1,6 @@
 #include "virtual_display_legacy.h"
 
+#include <cstdint>
 #include <algorithm>
 #include <cmath>
 #include <combaseapi.h>

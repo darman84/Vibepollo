@@ -470,7 +470,7 @@ const KeyCodeMap kKeyCodesMap[] = {
    * @param input The global input context.
    * @return A unique pointer to a per-client input data context.
    */
-  std::unique_ptr<client_input_t> allocate_client_input_context(input_t &input) {
+  std::unique_ptr<client_input_t> allocate_client_input_context(input_t &input, feedback_queue_t feedback_queue) {
     // Unused
     return nullptr;
   }

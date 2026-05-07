@@ -686,8 +686,12 @@ namespace platf {
   }
 
   struct client_input_raw_t: public client_input_t {
-    client_input_raw_t(input_t &input) {
+    client_input_raw_t(input_t &input, feedback_queue_t feedback_queue):
+        feedback_queue(std::move(feedback_queue)),
+        last_shape(0),
+        last_captured(false) {
       global = (input_raw_t *) input.get();
+      cursor_poll_task = task_pool.pushDelayed(poll_cursor_state, 50ms, this).task_id;
     }
 
     ~client_input_raw_t() override {
@@ -704,9 +708,48 @@ namespace platf {
       if (touch) {
         global->fnDestroySyntheticPointerDevice(touch);
       }
+      if (cursor_poll_task) {
+        task_pool.cancel(cursor_poll_task);
+      }
     }
 
     input_raw_t *global;
+    feedback_queue_t feedback_queue;
+    thread_pool_util::ThreadPool::task_id_t cursor_poll_task {};
+    std::uint32_t last_shape;
+    bool last_captured;
+
+    static void poll_cursor_state(client_input_raw_t *raw) {
+      CURSORINFO ci = { sizeof(CURSORINFO) };
+      std::uint32_t shape = 32512; // IDC_ARROW
+      bool is_captured = false;
+
+      if (GetCursorInfo(&ci)) {
+        if ((ci.flags & CURSOR_SHOWING) == 0) {
+          is_captured = true;
+        } else {
+          static const LPCTSTR standard_cursors[] = {
+            IDC_ARROW, IDC_IBEAM, IDC_WAIT, IDC_CROSS, IDC_UPARROW,
+            IDC_SIZENWSE, IDC_SIZENESW, IDC_SIZEWE, IDC_SIZENS, IDC_SIZEALL, IDC_NO, IDC_HAND,
+            IDC_APPSTARTING, IDC_HELP
+          };
+          for (auto cursor_name : standard_cursors) {
+            if (ci.hCursor == LoadCursor(NULL, cursor_name)) {
+              shape = (std::uint32_t)(uintptr_t)cursor_name;
+              break;
+            }
+          }
+        }
+      }
+
+      if (shape != raw->last_shape || is_captured != raw->last_captured) {
+        raw->last_shape = shape;
+        raw->last_captured = is_captured;
+        raw->feedback_queue->raise(gamepad_feedback_msg_t::make_cursor_state(0, shape, is_captured));
+      }
+
+      raw->cursor_poll_task = task_pool.pushDelayed(poll_cursor_state, 50ms, raw).task_id;
+    }
 
     // Device state and handles for pen and touch input must be stored in the per-client
     // input context, because each connected client may be sending their own independent
@@ -728,8 +771,8 @@ namespace platf {
    * @param input The global input context.
    * @return A unique pointer to a per-client input data context.
    */
-  std::unique_ptr<client_input_t> allocate_client_input_context(input_t &input) {
-    return std::make_unique<client_input_raw_t>(input);
+  std::unique_ptr<client_input_t> allocate_client_input_context(input_t &input, feedback_queue_t feedback_queue) {
+    return std::make_unique<client_input_raw_t>(input, std::move(feedback_queue));
   }
 
   /**

@@ -167,7 +167,7 @@ namespace input {
     ):
         shortcutFlags {},
         gamepads(MAX_GAMEPADS),
-        client_context {platf::allocate_client_input_context(platf_input)},
+        client_context {platf::allocate_client_input_context(platf_input, feedback_queue)},
         touch_port_event {std::move(touch_port_event)},
         feedback_queue {std::move(feedback_queue)},
         input_queue_task_scheduled {false},

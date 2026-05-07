@@ -84,6 +84,7 @@ namespace platf {
     set_motion_event_state,  ///< Set motion event state
     set_rgb_led,  ///< Set RGB LED
     set_adaptive_triggers,  ///< Set adaptive triggers
+    cursor_state, ///< Cursor state
   };
 
   struct gamepad_feedback_msg_t {
@@ -128,6 +129,15 @@ namespace platf {
       return msg;
     }
 
+    static gamepad_feedback_msg_t make_cursor_state(std::uint16_t id, std::uint32_t shape, bool is_captured) {
+      gamepad_feedback_msg_t msg;
+      msg.type = gamepad_feedback_e::cursor_state;
+      msg.id = id;
+      msg.data.cursor_state.shape = shape;
+      msg.data.cursor_state.is_captured = is_captured;
+      return msg;
+    }
+
     gamepad_feedback_e type;
     std::uint16_t id;
 
@@ -161,6 +171,11 @@ namespace platf {
         std::array<uint8_t, 10> left;
         std::array<uint8_t, 10> right;
       } adaptive_triggers;
+
+      struct {
+        std::uint32_t shape;
+        bool is_captured;
+      } cursor_state;
     } data;
   };
 
@@ -761,7 +776,7 @@ namespace platf {
    * @param input The global input context.
    * @return A unique pointer to a per-client input data context.
    */
-  std::unique_ptr<client_input_t> allocate_client_input_context(input_t &input);
+  std::unique_ptr<client_input_t> allocate_client_input_context(input_t &input, feedback_queue_t feedback_queue);
 
   /**
    * @brief Send a touch event to the OS.

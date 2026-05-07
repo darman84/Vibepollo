@@ -71,6 +71,7 @@ extern "C" {
 #define IDX_SET_CLIPBOARD 16
 #define IDX_FILE_TRANSFER_NONCE_REQUEST 17
 #define IDX_SET_ADAPTIVE_TRIGGERS 18
+#define IDX_CURSOR_STATE 19
 
 static const short packetTypes[] = {
   0x0305,  // Start A
@@ -92,6 +93,7 @@ static const short packetTypes[] = {
   0x3001,  // Set Clipboard (Apollo protocol extension)
   0x3002,  // File transfer nonce request (Apollo protocol extension)
   0x5503,  // Set Adaptive triggers (Sunshine protocol extension)
+  0x5504,  // Cursor state update (Sunshine protocol extension)
 };
 
 namespace asio = boost::asio;
@@ -246,6 +248,14 @@ namespace stream {
     std::uint8_t r;
     std::uint8_t g;
     std::uint8_t b;
+  };
+
+  struct control_cursor_state_t {
+    control_header_v2 header;
+
+    std::uint16_t id;
+    std::uint32_t shape;
+    std::uint8_t is_captured;
   };
 
   struct control_adaptive_triggers_t {
@@ -1031,6 +1041,19 @@ namespace stream {
       std::ranges::copy(msg.data.adaptive_triggers.left, plaintext.left);
       plaintext.type_right = msg.data.adaptive_triggers.type_right;
       std::ranges::copy(msg.data.adaptive_triggers.right, plaintext.right);
+
+      std::array<std::uint8_t, sizeof(control_encrypted_t) + crypto::cipher::round_to_pkcs7_padded(sizeof(plaintext)) + crypto::cipher::tag_size>
+        encrypted_payload;
+
+      payload = encode_control(session, util::view(plaintext), encrypted_payload);
+    } else if (msg.type == platf::gamepad_feedback_e::cursor_state) {
+      control_cursor_state_t plaintext;
+      plaintext.header.type = packetTypes[IDX_CURSOR_STATE];
+      plaintext.header.payloadLength = sizeof(plaintext) - sizeof(control_header_v2);
+
+      plaintext.id = util::endian::little(msg.id);
+      plaintext.shape = util::endian::little(msg.data.cursor_state.shape);
+      plaintext.is_captured = msg.data.cursor_state.is_captured ? 1 : 0;
 
       std::array<std::uint8_t, sizeof(control_encrypted_t) + crypto::cipher::round_to_pkcs7_padded(sizeof(plaintext)) + crypto::cipher::tag_size>
         encrypted_payload;

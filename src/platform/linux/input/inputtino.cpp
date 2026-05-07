@@ -25,7 +25,7 @@ namespace platf {
     return {new input_raw_t()};
   }
 
-  std::unique_ptr<client_input_t> allocate_client_input_context(input_t &input) {
+  std::unique_ptr<client_input_t> allocate_client_input_context(input_t &input, feedback_queue_t feedback_queue) {
     return std::make_unique<client_input_raw_t>(input);
   }
 
