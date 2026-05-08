@@ -1340,6 +1340,18 @@ public:
       }
     }
 
+    // Disable cursor capture: the cursor is rendered on the client side via Android's
+    // PointerIcon API using shape data from our custom 0x5504 CURSOR_STATE_UPDATE packet.
+    // Keeping the cursor in the video frame would produce a double-cursor artefact.
+    try {
+      _capture_session.IsCursorCaptureEnabled(false);
+      BOOST_LOG(info) << "WGC cursor capture disabled (client renders cursor via PointerIcon)";
+    } catch (const winrt::hresult_error &ex) {
+      BOOST_LOG(warning) << "IsCursorCaptureEnabled(false) failed: " << ex.code() << " - " << winrt::to_string(ex.message());
+    } catch (...) {
+      BOOST_LOG(warning) << "IsCursorCaptureEnabled(false) threw an unknown exception";
+    }
+
     // Technically this is not required for users that have 24H2, but there's really no functional difference.
     // So instead of coding out a version check, we'll just set it for everyone.
     if (winrt::Windows::Foundation::Metadata::ApiInformation::IsPropertyPresent(L"Windows.Graphics.Capture.GraphicsCaptureSession", L"MinUpdateInterval")) {

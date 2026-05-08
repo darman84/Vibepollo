@@ -18,6 +18,13 @@ extern thread_pool_util::ThreadPool task_pool;
  */
 extern bool display_cursor;
 
+/**
+ * @brief True while the host cursor is hidden by a game (ShowCursor(FALSE)).
+ * When set, absolute mouse move packets from the client are ignored to avoid
+ * overriding the game's ClipCursor restriction and causing a position jump.
+ */
+extern bool cursor_is_captured;
+
 #ifdef _WIN32
   // Declare global singleton used for NVIDIA control panel modifications
   #include "platform/windows/nvprefs/nvprefs_interface.h"

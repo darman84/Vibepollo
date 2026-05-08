@@ -8,6 +8,7 @@
 safe::mail_t mail::man;
 thread_pool_util::ThreadPool task_pool;
 bool display_cursor = true;
+bool cursor_is_captured = false;
 
 #ifdef _WIN32
 nvprefs::nvprefs_interface nvprefs_instance;

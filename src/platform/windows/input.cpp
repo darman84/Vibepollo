@@ -691,7 +691,7 @@ namespace platf {
         last_shape(0),
         last_captured(false) {
       global = (input_raw_t *) input.get();
-      cursor_poll_task = task_pool.pushDelayed(poll_cursor_state, 50ms, this).task_id;
+      cursor_poll_task = task_pool.pushDelayed(poll_cursor_state, 16ms, this).task_id;
     }
 
     ~client_input_raw_t() override {
@@ -710,6 +710,8 @@ namespace platf {
       }
       if (cursor_poll_task) {
         task_pool.cancel(cursor_poll_task);
+        // Restore cursor visibility for the host when the client disconnects.
+        display_cursor = true;
       }
     }
 
@@ -721,7 +723,9 @@ namespace platf {
 
     static void poll_cursor_state(client_input_raw_t *raw) {
       CURSORINFO ci = { sizeof(CURSORINFO) };
-      std::uint32_t shape = 32512; // IDC_ARROW
+      // Use 0 as sentinel for "unrecognised / custom cursor".
+      // Known system cursor IDs (MAKEINTRESOURCE values) are non-zero.
+      std::uint32_t shape = 0;
       bool is_captured = false;
 
       if (GetCursorInfo(&ci)) {
@@ -739,6 +743,8 @@ namespace platf {
               break;
             }
           }
+          // shape remains 0 if the cursor is a custom/application-defined handle
+          // that doesn't match any standard IDC_* cursor.
         }
       }
 
@@ -746,9 +752,21 @@ namespace platf {
         raw->last_shape = shape;
         raw->last_captured = is_captured;
         raw->feedback_queue->raise(gamepad_feedback_msg_t::make_cursor_state(0, shape, is_captured));
+
+        // Keep the global capture flag in sync immediately so that abs_mouse()
+        // stops processing incoming absolute coordinates as soon as we detect
+        // the cursor is captured — before the client even receives the packet.
+        cursor_is_captured = is_captured;
+
+        // When the cursor is visible (not captured by a game), hide it from the
+        // encoded video frame so the client can render it locally via PointerIcon
+        // without producing a double-cursor. When a game captures the cursor and
+        // hides it from the screen, re-enable cursor blending in the video so
+        // normal game-mode capture behaviour is preserved.
+        display_cursor = is_captured;
       }
 
-      raw->cursor_poll_task = task_pool.pushDelayed(poll_cursor_state, 50ms, raw).task_id;
+      raw->cursor_poll_task = task_pool.pushDelayed(poll_cursor_state, 16ms, raw).task_id;
     }
 
     // Device state and handles for pen and touch input must be stored in the per-client

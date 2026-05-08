@@ -524,6 +524,14 @@ namespace input {
       return;
     }
 
+    // If the host cursor is currently captured by a game (ShowCursor(FALSE) is active),
+    // skip absolute mouse positioning entirely. The game almost certainly called
+    // ClipCursor() at the same time, so any SetCursorPos() call here would be snapped
+    // to the clipped region (usually screen center), causing a visible camera jump.
+    if (cursor_is_captured) {
+      return;
+    }
+
     if (input->mouse_left_button_timeout == DISABLE_LEFT_BUTTON_DELAY) {
       input->mouse_left_button_timeout = ENABLE_LEFT_BUTTON_DELAY;
     }
