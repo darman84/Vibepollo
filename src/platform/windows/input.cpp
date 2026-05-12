@@ -721,6 +721,15 @@ namespace platf {
     std::uint32_t last_shape;
     bool last_captured;
 
+    // Asymmetric debounce: immediately enter captured mode to block absolute
+    // mouse positions as fast as possible (1 poll cycle = 16ms), but require
+    // stable cursor visibility before releasing captured mode. This prevents
+    // brief cursor flashes during game drag-scroll from toggling capture state
+    // while still protecting the host immediately when the game first hides
+    // the cursor.
+    uint32_t cursor_visible_count = 0;
+    static constexpr uint32_t CURSOR_VISIBLE_THRESHOLD = 4;  // 4 * 16ms = 64ms
+
     static void poll_cursor_state(client_input_raw_t *raw) {
       CURSORINFO ci = { sizeof(CURSORINFO) };
       // Use 0 as sentinel for "unrecognised / custom cursor".
@@ -748,6 +757,36 @@ namespace platf {
         }
       }
 
+      // Asymmetric debounce logic:
+      //   is_captured == true  → immediately commit (capture enters fast)
+      //   is_captured == false → debounce for CURSOR_VISIBLE_THRESHOLD cycles
+      // When the drag-scroll button (middle mouse) is not held, accelerate the
+      // debounce by counting twice as fast, so the cursor reappears more quickly
+      // after the user releases the drag-scroll button.
+      if (is_captured) {
+        // Cursor is hidden by the game — treat as captured immediately.
+        // No debounce: we want to block absolute mouse positions ASAP.
+        raw->cursor_visible_count = 0;
+      } else {
+        // Cursor is visible — require stable visibility before releasing capture.
+        // When middle button is held (drag-scroll active), count up normally
+        // with debounce. When middle button is not held (drag-scroll ended),
+        // skip directly to threshold so the poller confirms capture-release
+        // on the very next cycle, backing up the proactive release in
+        // passthrough(MOUSE_BUTTON).
+        if (middle_button_held) {
+          raw->cursor_visible_count++;
+        } else {
+          raw->cursor_visible_count = CURSOR_VISIBLE_THRESHOLD;
+        }
+        if (raw->cursor_visible_count < CURSOR_VISIBLE_THRESHOLD) {
+          // Not yet confident — skip commitment and feedback this cycle
+          raw->cursor_poll_task = task_pool.pushDelayed(poll_cursor_state, 16ms, raw).task_id;
+          return;
+        }
+      }
+
+      // Commit the debounced state.
       if (shape != raw->last_shape || is_captured != raw->last_captured) {
         raw->last_shape = shape;
         raw->last_captured = is_captured;
@@ -756,7 +795,14 @@ namespace platf {
         // Keep the global capture flag in sync immediately so that abs_mouse()
         // stops processing incoming absolute coordinates as soon as we detect
         // the cursor is captured — before the client even receives the packet.
+        bool was_captured = cursor_is_captured;
         cursor_is_captured = is_captured;
+
+        // Record the timestamp when transitioning out of captured mode so that
+        // we can enforce a grace period on absolute mouse position packets.
+        if (was_captured && !is_captured) {
+          cursor_capture_release_ts = std::chrono::steady_clock::now();
+        }
 
         // When the cursor is visible (not captured by a game), hide it from the
         // encoded video frame so the client can render it locally via PointerIcon

@@ -113,6 +113,14 @@ namespace input {
   static std::unordered_map<key_press_id_t, bool> key_press {};
   static std::array<std::uint8_t, 5> mouse_press {};
 
+  // Pending debounce tasks for drag-scroll button releases.
+  // When a release is received, SendInput(XUP) is delayed by 30ms.
+  // If a press for the same button arrives before the timer fires,
+  // the release is cancelled — filtering out spurious Bluetooth driver
+  // button-state flickering during drag-scroll initiation.
+  static thread_pool_util::ThreadPool::task_id_t middle_release_debounce {};
+  static thread_pool_util::ThreadPool::task_id_t x1_release_debounce {};
+
   static platf::input_t platf_input;
   static std::bitset<platf::MAX_GAMEPADS> gamepadMask {};
 
@@ -524,6 +532,16 @@ namespace input {
       return;
     }
 
+    // If a drag-scroll-capable mouse button (middle or X1/mouse4) is held,
+    // the game has likely begun drag-scroll or camera-pan and has called
+    // ClipCursor/ShowCursor(FALSE). Block absolute positioning proactively —
+    // before the async poller detects the hidden cursor — to prevent SetCursorPos
+    // from snapping the cursor away from the game's clip region and causing a
+    // camera jump.
+    if (middle_button_held) {
+      return;
+    }
+
     // If the host cursor is currently captured by a game (ShowCursor(FALSE) is active),
     // skip absolute mouse positioning entirely. The game almost certainly called
     // ClipCursor() at the same time, so any SetCursorPos() call here would be snapped
@@ -580,6 +598,42 @@ namespace input {
       }
 
       mouse_press[button] = !release;
+
+      if (button == BUTTON_MIDDLE || button == BUTTON_X1) {
+        auto &debounce_task = (button == BUTTON_MIDDLE) ? middle_release_debounce : x1_release_debounce;
+
+        if (!release) {
+          // Press — immediate. Cancel any pending release debounce and
+          // block absolute mouse positions right away.
+          if (debounce_task) {
+            task_pool.cancel(debounce_task);
+            debounce_task = nullptr;
+          }
+          middle_button_held = true;
+        } else {
+          // Release — check if the other drag-scroll button is still held.
+          middle_button_held = mouse_press[BUTTON_MIDDLE] || mouse_press[BUTTON_X1];
+
+          if (!middle_button_held) {
+            // All drag-scroll buttons released. Debounce the release:
+            // hold SendInput(XUP) for 30ms. If a press arrives before
+            // the timer fires, cancel the release — this filters out
+            // spurious button-state flickering from the Android Bluetooth
+            // driver that occurs during drag-scroll initiation.
+            if (debounce_task) {
+              task_pool.cancel(debounce_task);
+            }
+            debounce_task = task_pool.pushDelayed([button, &debounce_task]() {
+              platf::button_mouse(platf_input, button, true);
+              debounce_task = nullptr;
+            }, 30ms).task_id;
+          }
+
+          // Skip the immediate button_mouse call below; the debounce
+          // task will send the release after 30ms if not cancelled.
+          return;
+        }
+      }
     }
     /**
      * When Moonlight sends mouse input through absolute coordinates,

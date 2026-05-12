@@ -4,6 +4,8 @@
  */
 #pragma once
 
+#include <chrono>
+
 // local includes
 #include "entry_handler.h"
 #include "thread_pool.h"
@@ -24,6 +26,20 @@ extern bool display_cursor;
  * overriding the game's ClipCursor restriction and causing a position jump.
  */
 extern bool cursor_is_captured;
+
+/**
+ * @brief Timestamp of the most recent transition from captured to non-captured.
+ * Used to enforce a grace period during which absolute mouse position packets
+ * are temporarily ignored, giving the client time to switch back to absolute mode.
+ */
+extern std::chrono::steady_clock::time_point cursor_capture_release_ts;
+
+/**
+ * @brief True while a drag-scroll-capable mouse button (middle or X1/mouse4)
+ * is held down on the host. Used to proactively block absolute mouse positions
+ * and to manage cursor capture state around drag-scroll operations.
+ */
+extern bool middle_button_held;
 
 #ifdef _WIN32
   // Declare global singleton used for NVIDIA control panel modifications
